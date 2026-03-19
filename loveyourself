@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S&L Wellness Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Chosen Palette: Calm Harmony (Stone, Teal, Amber) -->
+    <!-- Application Structure Plan: La dashboard è strutturata in un layout a schede (tab) per evitare un sovraccarico di informazioni. L'utente atterra su una "Overview" con i progressi giornalieri (Chart.js), e può navigare tra "Routine", "Stretching", "Mindfulness" ed "Ergonomia". La scelta di questo layout permette di usare l'app come uno strumento "always-on" sulla scrivania: il timer della routine lavora in background, mentre lo strumento di respirazione offre supporto immediato in momenti di stress, trasformando un report statico in un compagno di lavoro interattivo. -->
+    <!-- Visualization & Content Choices: 
+         1. Progresso Giornaliero -> Donut Chart (Chart.js) -> Interazione: Si aggiorna quando l'utente completa una pausa -> Giustificazione: Gamification visiva per incoraggiare la costanza. Nessun SVG.
+         2. Routine Ogni Ora -> Interfaccia Timer (Vanilla JS) -> Interazione: Start/Stop e check list -> Giustificazione: Trasforma la direttiva "ogni ora" in uno strumento utilizzabile.
+         3. Mindfulness 4-7-8 -> Visualizzatore Dinamico (Canvas/CSS) -> Interazione: Cerchio che si espande/contrae -> Giustificazione: Guida visivamente il ritmo respiratorio, riducendo lo sforzo cognitivo. 
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        stone: { 50: '#fafaf9', 100: '#f5f5f4', 800: '#292524', 900: '#1c1917' },
+                        teal: { 100: '#ccfbf1', 600: '#0d9488', 800: '#115e59' },
+                        amber: { 100: '#fef3c7', 700: '#b45309' }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #fafaf9; }
+        
+        /* Required Chart Container Styling */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 300px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 250px;
+            max-height: 300px;
+        }
+
+        /* Breathing Animation Container */
+        .breathing-visualizer {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 250px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .breathing-circle {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background-color: #ccfbf1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-weight: bold;
+            color: #115e59;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            /* Transition is handled via JS for precision */
+        }
+
+        /* Custom scrollbar for sleekness */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f5f5f4; }
+        ::-webkit-scrollbar-thumb { background: #d6d3d1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a8a29e; }
+    </style>
+</head>
+<body class="text-stone-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-stone-900 text-stone-50 p-6 shadow-md">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight">Spencer & Lewis</h1>
+                <p class="text-stone-300 text-sm mt-1 uppercase tracking-widest">Desk-Workout & Mindfulness App</p>
+            </div>
+            <div class="bg-stone-800 p-3 rounded-lg border border-stone-700 text-center max-w-sm">
+                <span class="block text-xs text-stone-400 mb-1">Obiettivo del Team</span>
+                <p class="text-sm italic">"Mantenere creatività e produttività riducendo cortisolo e rigidità muscolare."</p>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-grow max-w-6xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-4 gap-6">
+
+        <!-- Sidebar / Dashboard Overview -->
+        <aside class="lg:col-span-1 flex flex-col gap-6">
+            
+            <!-- Progress Widget -->
+            <div class="bg-white p-5 rounded-xl shadow-sm border border-stone-200">
+                <h2 class="text-lg font-bold mb-2 flex items-center gap-2"><span>📈</span> Progressi di Oggi</h2>
+                <p class="text-xs text-stone-500 mb-4">Traccia le pause attive per combattere la "Sindrome da Scrivania". Obiettivo: 6 pause.</p>
+                
+                <div class="chart-container">
+                    <canvas id="progressChart"></canvas>
+                </div>
+                
+                <div class="mt-4 text-center">
+                    <button onclick="logBreak()" class="w-full bg-teal-600 hover:bg-teal-700 text-white font-semibold py-2 px-4 rounded transition-colors text-sm">
+                        + Registra Pausa Completata
+                    </button>
+                    <button onclick="resetProgress()" class="text-xs text-stone-400 hover:text-stone-600 mt-3 underline">
+                        Azzera Progressi
+                    </button>
+                </div>
+            </div>
+
+            <!-- Context Info -->
+            <div class="bg-amber-100/50 p-5 rounded-xl border border-amber-200">
+                <h3 class="text-amber-800 font-bold text-sm mb-2 flex items-center gap-2"><span>💡</span> Perché questa App?</h3>
+                <p class="text-xs text-stone-700 leading-relaxed">
+                    Questo strumento traduce le linee guida aziendali in azioni pratiche. Usa la navigazione principale per esplorare le routine orarie, gli allungamenti profondi e le tecniche per resettare il sistema nervoso nei momenti di picco.
+                </p>
+            </div>
+
+        </aside>
+
+        <!-- Main Workspace (Tabs) -->
+        <div class="lg:col-span-3 bg-white rounded-xl shadow-sm border border-stone-200 overflow-hidden flex flex-col">
+            
+            <!-- Tab Navigation -->
+            <nav class="flex border-b border-stone-200 overflow-x-auto">
+                <button onclick="switchTab('routine')" id="tab-routine" class="tab-btn flex-1 py-4 px-6 text-sm font-semibold text-teal-600 border-b-2 border-teal-600 bg-teal-50/30 whitespace-nowrap transition-colors">
+                    ⏱️ Routine (Ogni Ora)
+                </button>
+                <button onclick="switchTab('stretching')" id="tab-stretching" class="tab-btn flex-1 py-4 px-6 text-sm font-semibold text-stone-500 hover:text-stone-700 hover:bg-stone-50 border-b-2 border-transparent whitespace-nowrap transition-colors">
+                    🧘 Stretching Profondo
+                </button>
+                <button onclick="switchTab('mindfulness')" id="tab-mindfulness" class="tab-btn flex-1 py-4 px-6 text-sm font-semibold text-stone-500 hover:text-stone-700 hover:bg-stone-50 border-b-2 border-transparent whitespace-nowrap transition-colors">
+                    🌿 Micro-Mindfulness
+                </button>
+                <button onclick="switchTab('ergonomia')" id="tab-ergonomia" class="tab-btn flex-1 py-4 px-6 text-sm font-semibold text-stone-500 hover:text-stone-700 hover:bg-stone-50 border-b-2 border-transparent whitespace-nowrap transition-colors">
+                    🪑 Ergonomia
+                </button>
+            </nav>
+
+            <!-- Tab Contents -->
+            <div class="p-6 md:p-8 relative flex-grow">
+
+                <!-- 1. Routine Tab -->
+                <section id="content-routine" class="tab-content block animate-fade-in">
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold mb-2">La Routine "Ogni Ora"</h2>
+                        <p class="text-stone-600 text-sm">
+                            <strong>Contesto dell'attività:</strong> Movimenti rapidi di 2 minuti progettati per aprire le spalle chiuse e sciogliere la tensione cervicale causata dall'uso del monitor. Usa il timer qui sotto per ricordarti di eseguirli.
+                        </p>
+                    </div>
+
+                    <div class="bg-stone-50 border border-stone-200 rounded-lg p-6 mb-8 text-center">
+                        <div class="text-5xl font-mono font-bold text-stone-800 tracking-wider mb-4" id="timerDisplay">60:00</div>
+                        <div class="flex justify-center gap-3">
+                            <button id="btnStart" onclick="startTimer()" class="bg-stone-800 hover:bg-stone-700 text-white px-6 py-2 rounded-md font-medium transition-colors">Avvia Timer</button>
+                            <button id="btnStop" onclick="stopTimer()" class="bg-stone-300 hover:bg-stone-400 text-stone-800 px-6 py-2 rounded-md font-medium transition-colors hidden">Pausa</button>
+                            <button onclick="resetTimer()" class="bg-stone-200 hover:bg-stone-300 text-stone-700 px-4 py-2 rounded-md transition-colors">Reset</button>
+                        </div>
+                        <p class="text-xs text-stone-500 mt-4" id="timerStatus">Imposta il timer e torna a lavorare. Ti avviseremo noi.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="border border-stone-200 p-4 rounded-lg hover:shadow-md transition-shadow cursor-pointer" onclick="toggleTask(this)">
+                            <div class="flex items-start justify-between">
+                                <h4 class="font-bold text-teal-800">1. Apertura Petto</h4>
+                                <span class="text-xs bg-teal-100 text-teal-800 px-2 py-1 rounded">30 sec</span>
+                            </div>
+                            <p class="text-sm mt-2 text-stone-600">Intreccia le mani dietro la schiena. Spingi le nocche in basso, aprendo il petto e guardando leggermente in alto.</p>
+                            <div class="mt-3 text-right"><span class="check-icon text-stone-300 text-xl">✓</span></div>
+                        </div>
+                        <div class="border border-stone-200 p-4 rounded-lg hover:shadow-md transition-shadow cursor-pointer" onclick="toggleTask(this)">
+                            <div class="flex items-start justify-between">
+                                <h4 class="font-bold text-teal-800">2. Rotazioni Collo</h4>
+                                <span class="text-xs bg-teal-100 text-teal-800 px-2 py-1 rounded">30 sec</span>
+                            </div>
+                            <p class="text-sm mt-2 text-stone-600">Mento verso il petto, ruota lentamente l'orecchio destro verso la spalla destra e viceversa. <strong class="text-amber-700">Mai all'indietro.</strong></p>
+                            <div class="mt-3 text-right"><span class="check-icon text-stone-300 text-xl">✓</span></div>
+                        </div>
+                        <div class="border border-stone-200 p-4 rounded-lg hover:shadow-md transition-shadow cursor-pointer" onclick="toggleTask(this)">
+                            <div class="flex items-start justify-between">
+                                <h4 class="font-bold text-teal-800">3. Spalle</h4>
+                                <span class="text-xs bg-teal-100 text-teal-800 px-2 py-1 rounded">60 sec</span>
+                            </div>
+                            <p class="text-sm mt-2 text-stone-600">Esegui circonduzioni delle spalle. Ruotale all'indietro con movimenti ampi e molto lenti.</p>
+                            <div class="mt-3 text-right"><span class="check-icon text-stone-300 text-xl">✓</span></div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 2. Stretching Tab -->
+                <section id="content-stretching" class="tab-content hidden animate-fade-in">
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold mb-2">Stretching Profondo</h2>
+                        <p class="text-stone-600 text-sm">
+                            <strong>Contesto dell'attività:</strong> Da eseguire a metà mattina o dopo pranzo. Questi movimenti sono studiati per agire su muscoli che si accorciano e irrigidiscono stando seduti a lungo (glutei, colonna, avambracci). Non forzare mai il dolore.
+                        </p>
+                    </div>
+
+                    <div class="space-y-4">
+                        <!-- Stretch 1 -->
+                        <div class="bg-white border-l-4 border-teal-600 p-5 rounded shadow-sm hover:bg-stone-50 transition-colors group">
+                            <h3 class="text-lg font-bold text-stone-800 flex items-center gap-2">
+                                <span>🔄</span> Torsione da Seduti (Spinal Twist)
+                                <span class="text-xs font-normal bg-stone-200 text-stone-700 px-2 py-1 rounded ml-auto">30 sec / lato</span>
+                            </h3>
+                            <p class="text-stone-600 text-sm mt-2">Siediti dritto, metti la mano sinistra sull'esterno del ginocchio destro e usa lo schienale della sedia per aiutarti a ruotare il busto verso destra. Respira profondamente e cambia lato.</p>
+                        </div>
+
+                        <!-- Stretch 2 -->
+                        <div class="bg-white border-l-4 border-amber-500 p-5 rounded shadow-sm hover:bg-stone-50 transition-colors">
+                            <h3 class="text-lg font-bold text-stone-800 flex items-center gap-2">
+                                <span>🪢</span> Allungamento del Piriforme (Figura 4)
+                                <span class="text-xs font-normal bg-stone-200 text-stone-700 px-2 py-1 rounded ml-auto">45 sec / lato</span>
+                            </h3>
+                            <p class="text-stone-600 text-sm mt-2">Appoggia la caviglia destra sul ginocchio sinistro. Mantenendo la schiena dritta, inclinati leggermente in avanti finché non senti allungare il gluteo. Ottimo contro la sciatalgia da seduta.</p>
+                        </div>
+
+                        <!-- Stretch 3 -->
+                        <div class="bg-white border-l-4 border-teal-400 p-5 rounded shadow-sm hover:bg-stone-50 transition-colors">
+                            <h3 class="text-lg font-bold text-stone-800 flex items-center gap-2">
+                                <span>✋</span> Stretch dei Polsi e Avambracci
+                                <span class="text-xs font-normal bg-stone-200 text-stone-700 px-2 py-1 rounded ml-auto">30 sec / lato</span>
+                            </h3>
+                            <p class="text-stone-600 text-sm mt-2">Estendi un braccio in avanti con il palmo verso l'esterno e le dita verso l'alto; usa l'altra mano per tirare dolcemente le dita verso di te. <strong class="text-teal-800">Fondamentale per chi usa molto il mouse.</strong></p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 3. Mindfulness Tab -->
+                <section id="content-mindfulness" class="tab-content hidden animate-fade-in">
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold mb-2">Micro-Mindfulness per lo Stress</h2>
+                        <p class="text-stone-600 text-sm">
+                            <strong>Contesto dell'attività:</strong> Tecniche da 60-90 secondi per resettare il sistema nervoso autonomo durante i picchi di lavoro, scadenze imminenti o sovraccarico da email. Scegli la tecnica più adatta al momento.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <!-- 4-7-8 Breathing Applet -->
+                        <div class="bg-stone-50 rounded-xl p-6 border border-stone-200 flex flex-col items-center">
+                            <h3 class="font-bold text-lg mb-1 text-center">La Tecnica 4-7-8</h3>
+                            <p class="text-xs text-stone-500 mb-6 text-center">Esercizio calmante rapido. "Disattiva" la risposta allo stress. Ripeti per 4 cicli.</p>
+                            
+                            <div class="breathing-visualizer w-full">
+                                <div id="breathCircle" class="breathing-circle shadow-inner">
+                                    <span id="breathText" class="text-sm select-none">Pronto?</span>
+                                </div>
+                            </div>
+                            
+                            <div class="mt-6 flex gap-2">
+                                <button id="btnBreathStart" onclick="startBreathing()" class="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded text-sm transition-colors">Inizia Ciclo</button>
+                                <button id="btnBreathStop" onclick="stopBreathing()" class="bg-stone-200 hover:bg-stone-300 text-stone-700 px-4 py-2 rounded text-sm transition-colors disabled:opacity-50" disabled>Ferma</button>
+                            </div>
+                        </div>
+
+                        <!-- 5-4-3-2-1 Grounding -->
+                        <div class="bg-white rounded-xl p-6 border border-stone-200">
+                            <h3 class="font-bold text-lg mb-1">Il Metodo Grounding</h3>
+                            <p class="text-xs text-stone-500 mb-4">Se ti senti sopraffatto, fermati e identifica mentalmente:</p>
+                            
+                            <ul class="space-y-3">
+                                <li class="flex items-start gap-3 p-2 hover:bg-stone-50 rounded transition-colors cursor-default">
+                                    <span class="bg-stone-800 text-white font-bold w-6 h-6 flex items-center justify-center rounded-full text-xs shrink-0">5</span>
+                                    <span class="text-sm text-stone-700">Cose che puoi <strong>vedere</strong> attorno a te.</span>
+                                </li>
+                                <li class="flex items-start gap-3 p-2 hover:bg-stone-50 rounded transition-colors cursor-default">
+                                    <span class="bg-stone-700 text-white font-bold w-6 h-6 flex items-center justify-center rounded-full text-xs shrink-0">4</span>
+                                    <span class="text-sm text-stone-700">Cose che puoi <strong>toccare</strong> (es. la consistenza della scrivania).</span>
+                                </li>
+                                <li class="flex items-start gap-3 p-2 hover:bg-stone-50 rounded transition-colors cursor-default">
+                                    <span class="bg-stone-600 text-white font-bold w-6 h-6 flex items-center justify-center rounded-full text-xs shrink-0">3</span>
+                                    <span class="text-sm text-stone-700">Suoni che <strong>senti</strong> (il ronzio del PC, voci).</span>
+                                </li>
+                                <li class="flex items-start gap-3 p-2 hover:bg-stone-50 rounded transition-colors cursor-default">
+                                    <span class="bg-stone-500 text-white font-bold w-6 h-6 flex items-center justify-center rounded-full text-xs shrink-0">2</span>
+                                    <span class="text-sm text-stone-700">Odori che <strong>percepisci</strong> (caffè, carta).</span>
+                                </li>
+                                <li class="flex items-start gap-3 p-2 hover:bg-stone-50 rounded transition-colors cursor-default">
+                                    <span class="bg-stone-400 text-white font-bold w-6 h-6 flex items-center justify-center rounded-full text-xs shrink-0">1</span>
+                                    <span class="text-sm text-stone-700">Cosa che puoi <strong>assaggiare</strong> o sensazione positiva nel corpo.</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 4. Ergonomia Tab -->
+                <section id="content-ergonomia" class="tab-content hidden animate-fade-in">
+                    <div class="mb-6">
+                        <h2 class="text-2xl font-bold mb-2">Ergonomia "Invisibile"</h2>
+                        <p class="text-stone-600 text-sm">
+                            <strong>Contesto dell'attività:</strong> Piccoli accorgimenti passivi e abitudini ambientali che puoi implementare oggi stesso. Lavorano silenziosamente per prevenire l'affaticamento durante l'intera giornata lavorativa.
+                        </p>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div class="bg-white border border-stone-200 p-6 rounded-xl text-center hover:-translate-y-1 transition-transform duration-300">
+                            <div class="text-4xl mb-4">👀</div>
+                            <h3 class="font-bold text-lg mb-2">Regola 20-20-20</h3>
+                            <p class="text-sm text-stone-600">Ogni 20 minuti, guarda qualcosa a 20 piedi (circa 6 metri) di distanza per 20 secondi. Previene l'affaticamento visivo.</p>
+                        </div>
+                        
+                        <div class="bg-white border border-stone-200 p-6 rounded-xl text-center hover:-translate-y-1 transition-transform duration-300">
+                            <div class="text-4xl mb-4">📐</div>
+                            <h3 class="font-bold text-lg mb-2">Angoli a 90°</h3>
+                            <p class="text-sm text-stone-600">Assicurati che i gomiti siano piegati a 90 gradi e appoggiati. I polsi devono rimanere in posizione neutra (non piegati in su o in giù).</p>
+                        </div>
+
+                        <div class="bg-white border border-stone-200 p-6 rounded-xl text-center hover:-translate-y-1 transition-transform duration-300">
+                            <div class="text-4xl mb-4">💧</div>
+                            <h3 class="font-bold text-lg mb-2">Idratazione Strategica</h3>
+                            <p class="text-sm text-stone-600">Tieni la borraccia dell'acqua <em class="text-amber-700">lontana</em> dalla scrivania. Ti costringerà ad alzarti fisicamente per andare a bere, attivando la circolazione.</p>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="bg-stone-100 py-6 border-t border-stone-200 mt-auto">
+        <div class="max-w-6xl mx-auto px-4 text-center text-stone-500 text-xs">
+            Progettato per il benessere del team Spencer & Lewis. Ricorda: Ascolta sempre il tuo corpo.
+        </div>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- State Management ---
+        const state = {
+            breaksGoal: 6,
+            breaksCompleted: 0,
+            timerSeconds: 3600, // 60 mins
+            timerInterval: null,
+            isTimerRunning: false,
+            breathTimeout1: null,
+            breathTimeout2: null,
+            breathTimeout3: null,
+            isBreathing: false
+        };
+
+        // --- Chart.js Initialization & Logic ---
+        let progressChartInstance = null;
+
+        function initChart() {
+            const ctx = document.getElementById('progressChart').getContext('2d');
+            
+            const remaining = Math.max(0, state.breaksGoal - state.breaksCompleted);
+            const data = {
+                labels: ['Completate', 'Da Fare'],
+                datasets: [{
+                    data: [state.breaksCompleted, remaining],
+                    backgroundColor: [
+                        '#0d9488', // teal-600
+                        '#e7e5e4'  // stone-200
+                    ],
+                    borderWidth: 0,
+                    hoverOffset: 4
+                }]
+            };
+
+            const config = {
+                type: 'doughnut',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, // Respect container bounds
+                    cutout: '75%',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return ` ${context.label}: ${context.raw}`;
+                                }
+                            }
+                        }
+                    },
+                    animation: { animateScale: true }
+                },
+                plugins: [{
+                    id: 'centerText',
+                    beforeDraw: function(chart) {
+                        const width = chart.width, height = chart.height, ctx = chart.ctx;
+                        ctx.restore();
+                        const fontSize = (height / 114).toFixed(2);
+                        ctx.font = "bold " + fontSize + "em sans-serif";
+                        ctx.textBaseline = "middle";
+                        ctx.fillStyle = "#292524"; // stone-800
+                        const text = state.breaksCompleted + "/" + state.breaksGoal,
+                            textX = Math.round((width - ctx.measureText(text).width) / 2),
+                            textY = height / 2;
+                        ctx.fillText(text, textX, textY);
+                        ctx.save();
+                    }
+                }]
+            };
+
+            progressChartInstance = new Chart(ctx, config);
+        }
+
+        function updateChart() {
+            if (progressChartInstance) {
+                const remaining = Math.max(0, state.breaksGoal - state.breaksCompleted);
+                progressChartInstance.data.datasets[0].data = [state.breaksCompleted, remaining];
+                progressChartInstance.update();
+            }
+        }
+
+        function logBreak() {
+            state.breaksCompleted++;
+            updateChart();
+            // Provide subtle feedback
+            const btn = event.target;
+            const originalText = btn.innerText;
+            btn.innerText = "✓ Registrata!";
+            btn.classList.replace('bg-teal-600', 'bg-teal-500');
+            setTimeout(() => {
+                btn.innerText = originalText;
+                btn.classList.replace('bg-teal-500', 'bg-teal-600');
+            }, 1500);
+        }
+
+        function resetProgress() {
+            if(confirm("Vuoi azzerare le pause registrate oggi?")) {
+                state.breaksCompleted = 0;
+                updateChart();
+            }
+        }
+
+        // --- Navigation Logic ---
+        function switchTab(tabId) {
+            // Hide all contents
+            document.querySelectorAll('.tab-content').forEach(el => {
+                el.classList.add('hidden');
+            });
+            // Reset all buttons
+            document.querySelectorAll('.tab-btn').forEach(el => {
+                el.classList.remove('text-teal-600', 'border-teal-600', 'bg-teal-50/30');
+                el.classList.add('text-stone-500', 'border-transparent');
+            });
+
+            // Show target content
+            document.getElementById(`content-${tabId}`).classList.remove('hidden');
+            
+            // Highlight target button
+            const activeBtn = document.getElementById(`tab-${tabId}`);
+            activeBtn.classList.remove('text-stone-500', 'border-transparent');
+            activeBtn.classList.add('text-teal-600', 'border-teal-600', 'bg-teal-50/30');
+
+            // If navigating away from mindfulness, stop breathing animation to save resources
+            if(tabId !== 'mindfulness' && state.isBreathing) {
+                stopBreathing();
+            }
+        }
+
+        // --- Timer Logic (Routine) ---
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = (seconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        }
+
+        function updateTimerDisplay() {
+            document.getElementById('timerDisplay').innerText = formatTime(state.timerSeconds);
+            // Change color if close to zero
+            if(state.timerSeconds <= 60 && state.timerSeconds > 0) {
+                document.getElementById('timerDisplay').classList.add('text-amber-700');
+            } else {
+                document.getElementById('timerDisplay').classList.remove('text-amber-700');
+            }
+        }
+
+        function startTimer() {
+            if (state.isTimerRunning) return;
+            
+            // Check if timer ended previously
+            if (state.timerSeconds === 0) {
+                state.timerSeconds = 3600;
+                updateTimerDisplay();
+            }
+
+            document.getElementById('btnStart').classList.add('hidden');
+            document.getElementById('btnStop').classList.remove('hidden');
+            document.getElementById('timerStatus').innerText = "Timer attivo. Concentrati sul lavoro.";
+
+            state.isTimerRunning = true;
+            state.timerInterval = setInterval(() => {
+                state.timerSeconds--;
+                updateTimerDisplay();
+
+                if (state.timerSeconds <= 0) {
+                    clearInterval(state.timerInterval);
+                    state.isTimerRunning = false;
+                    document.getElementById('btnStart').classList.remove('hidden');
+                    document.getElementById('btnStop').classList.add('hidden');
+                    document.getElementById('timerStatus').innerHTML = "<strong class='text-teal-700'>È ora della routine!</strong> Esegui gli esercizi e registra la pausa.";
+                    // Audio alert could go here
+                }
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(state.timerInterval);
+            state.isTimerRunning = false;
+            document.getElementById('btnStart').classList.remove('hidden');
+            document.getElementById('btnStart').innerText = "Riprendi";
+            document.getElementById('btnStop').classList.add('hidden');
+            document.getElementById('timerStatus').innerText = "Timer in pausa.";
+        }
+
+        function resetTimer() {
+            clearInterval(state.timerInterval);
+            state.isTimerRunning = false;
+            state.timerSeconds = 3600;
+            updateTimerDisplay();
+            document.getElementById('btnStart').classList.remove('hidden');
+            document.getElementById('btnStart').innerText = "Avvia Timer";
+            document.getElementById('btnStop').classList.add('hidden');
+            document.getElementById('timerStatus').innerText = "Imposta il timer e torna a lavorare. Ti avviseremo noi.";
+            
+            // Uncheck tasks
+            document.querySelectorAll('.check-icon').forEach(icon => {
+                icon.classList.remove('text-teal-600');
+                icon.classList.add('text-stone-300');
+            });
+        }
+
+        function toggleTask(element) {
+            const icon = element.querySelector('.check-icon');
+            if(icon.classList.contains('text-stone-300')) {
+                icon.classList.replace('text-stone-300', 'text-teal-600');
+            } else {
+                icon.classList.replace('text-teal-600', 'text-stone-300');
+            }
+        }
+
+        // --- Breathing Animation Logic (Mindfulness) ---
+        function cycleBreathing() {
+            if(!state.isBreathing) return;
+
+            const circle = document.getElementById('breathCircle');
+            const text = document.getElementById('breathText');
+
+            // 1. INSPIRA (4s)
+            text.innerText = "Inspira... (4s)";
+            circle.style.transition = "transform 4s ease-in-out, background-color 4s linear";
+            circle.style.transform = "scale(1.8)";
+            circle.style.backgroundColor = "#99f6e4"; // teal-200
+
+            state.breathTimeout1 = setTimeout(() => {
+                if(!state.isBreathing) return;
+                
+                // 2. TRATTIENI (7s)
+                text.innerText = "Trattieni... (7s)";
+                // Hold scale, change color slightly to indicate hold
+                circle.style.transition = "background-color 7s linear";
+                circle.style.backgroundColor = "#ccfbf1"; // teal-100
+
+                state.breathTimeout2 = setTimeout(() => {
+                    if(!state.isBreathing) return;
+
+                    // 3. ESPIRA (8s)
+                    text.innerText = "Espira... (8s)";
+                    circle.style.transition = "transform 8s ease-in-out, background-color 8s linear";
+                    circle.style.transform = "scale(1)";
+                    circle.style.backgroundColor = "#5eead4"; // teal-300
+
+                    state.breathTimeout3 = setTimeout(() => {
+                        if(!state.isBreathing) return;
+                        // Loop
+                        cycleBreathing();
+                    }, 8000);
+
+                }, 7000);
+
+            }, 4000);
+        }
+
+        function startBreathing() {
+            state.isBreathing = true;
+            document.getElementById('btnBreathStart').disabled = true;
+            document.getElementById('btnBreathStart').classList.add('opacity-50');
+            document.getElementById('btnBreathStop').disabled = false;
+            document.getElementById('btnBreathStop').classList.remove('opacity-50');
+            
+            cycleBreathing();
+        }
+
+        function stopBreathing() {
+            state.isBreathing = false;
+            clearTimeout(state.breathTimeout1);
+            clearTimeout(state.breathTimeout2);
+            clearTimeout(state.breathTimeout3);
+
+            const circle = document.getElementById('breathCircle');
+            const text = document.getElementById('breathText');
+            
+            // Reset visuals quickly
+            circle.style.transition = "transform 0.5s ease, background-color 0.5s ease";
+            circle.style.transform = "scale(1)";
+            circle.style.backgroundColor = "#ccfbf1";
+            text.innerText = "Pronto?";
+
+            document.getElementById('btnBreathStart').disabled = false;
+            document.getElementById('btnBreathStart').classList.remove('opacity-50');
+            document.getElementById('btnBreathStop').disabled = true;
+            document.getElementById('btnBreathStop').classList.add('opacity-50');
+        }
+
+        // --- Initialization on Load ---
+        window.onload = function() {
+            initChart();
+            updateTimerDisplay();
+        };
+
+    </script>
+</body>
+</html>
